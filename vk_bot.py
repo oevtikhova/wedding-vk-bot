@@ -83,21 +83,46 @@ vk_session = vk_api.VkApi(token=VK_TOKEN, api_version='5.199')
 vk = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 
-# --- ОТЛАДКА: получаем список всех бесед бота ---
+# --- ДИАГНОСТИКА: проверяем доступ к беседе ---
+logging.info("=== ДИАГНОСТИКА БЕСЕДЫ ===")
+
+# 1) Пытаемся получить информацию о беседе chat_id=109
 try:
-    logging.info("=== ЗАПРАШИВАЕМ СПИСОК БЕСЕД БОТА ===")
-    conversations = vk.messages.getConversations(count=20)
-    logging.info(f"=== СПИСОК БЕСЕД БОТА ===")
-    for conv in conversations['items']:
-        peer_id = conv['conversation']['peer']['id']
-        try:
-            title = conv['conversation']['chat_settings'].get('title', 'Личная переписка')
-        except Exception:
-            title = 'Личная переписка'
-        logging.info(f"peer_id: {peer_id}, название: {title}")
-    logging.info(f"=== КОНЕЦ СПИСКА БЕСЕД ===")
+    chat_info = vk.messages.getChat(chat_id=109)
+    logging.info(f"✅ getChat(109): {json.dumps(chat_info, ensure_ascii=False)}")
 except Exception as e:
-    logging.error(f"Не удалось получить список бесед: {e}")
+    logging.error(f"❌ getChat(109): {repr(e)}")
+
+# 2) Пытаемся получить участников беседы
+try:
+    members = vk.messages.getConversationMembers(peer_id=2000000109)
+    logging.info(f"✅ Участники беседы: {json.dumps(members, ensure_ascii=False)[:500]}")
+except Exception as e:
+    logging.error(f"❌ getConversationMembers: {repr(e)}")
+
+# 3) Пытаемся отправить тестовое сообщение с peer_id
+try:
+    vk.messages.send(
+        peer_id=2000000109,
+        message="🧪 Тест №1 (peer_id)",
+        random_id=get_random_id()
+    )
+    logging.info("✅ Тест №1 (peer_id): отправлено")
+except Exception as e:
+    logging.error(f"❌ Тест №1 (peer_id): {repr(e)}")
+
+# 4) Пытаемся отправить тестовое сообщение с chat_id
+try:
+    vk.messages.send(
+        chat_id=109,
+        message="🧪 Тест №2 (chat_id)",
+        random_id=get_random_id()
+    )
+    logging.info("✅ Тест №2 (chat_id): отправлено")
+except Exception as e:
+    logging.error(f"❌ Тест №2 (chat_id): {repr(e)}")
+
+logging.info("=== КОНЕЦ ДИАГНОСТИКИ ===")
 
 # --- Отправка в БЕСЕДУ (для гостей) ---
 def send_to_group(text, reply_to=None):
