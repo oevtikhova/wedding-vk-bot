@@ -2,7 +2,6 @@ import logging
 import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import json
 import vk_api
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from vk_api.utils import get_random_id
@@ -10,9 +9,9 @@ import schedule
 import time
 
 # --- НАСТРОЙКИ ---
-VK_TOKEN = os.environ.get("VK_TOKEN", "vk1.a.nf6zK6aw_gwAxX7cc5mYvEbP3oqbyhOTXKWaCAieJ0RnV792f_6SIt8ZZ_eAjUHxPDx3BI-n81ZLrreqo3AOQHjB3Dc0ffBmHj-Eru-bBgr-lei-TLd8a9LUUgkiPWRnFlzBjmaoBAyD4YdZ6uHwELD_EAZJTwCcSB3JC76Z2J_5SQRP84XmrJGW1QoFs4vqrxPCy9EbFRLE-W4L0s1lUQ")
+VK_TOKEN = os.environ.get("VK_TOKEN", "")
 GROUP_ID = int(os.environ.get("GROUP_ID", "241527291"))
-PEER_ID = 2000000002  # peer_id БЕСЕДЫ для гостей (возможно, нужно будет заменить)
+PEER_ID = 2000000002  # peer_id БЕСЕДЫ для гостей
 TASK_INTERVAL = 900  # 15 минут
 
 # --- Ваш личный ID ВК (для подтверждений в личку) ---
@@ -50,7 +49,6 @@ TASKS = [
     "Изобразите молодожёнов на фото так, чтобы было смешно 😂",
     "Отправьте видеокружок с пожеланием для молодой пары 🎉",
     "Помашите из окна случайному прохожему так, чтобы он помахал вам в ответ. Снимите этот триумф на видео! 👋",
-    "Найдите гостя, чья первая буква имени совпадает с вашей. Сделайте совместное фото «Тёзки» 🔤",
     "Включите фантазию! Сделайте фото любого предмета в автобусе (бутылка, поручень, ремень безопасности) так, будто это свадебное кольцо 💍",
     "Сделайте фото в стиле «Серьёзная мафия». Никаких улыбок, суровые лица, бокалы в руках 😎",
     "Изучаем палитру сегодняшнего дня прямо на улицах города! 🏙️ Найдите за окном автобуса что-то голубое, коричневое, оливковое, сливочное или синее. Сделайте фото через стекло и подпишите, насколько этот объект вписывается в наш дресс-код от 1 до 10. Самый стильный кадр получит приз на банкете! 🪟👔",
@@ -82,47 +80,6 @@ def run_health_server():
 vk_session = vk_api.VkApi(token=VK_TOKEN, api_version='5.199')
 vk = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
-
-# --- ДИАГНОСТИКА: проверяем доступ к беседе ---
-logging.info("=== ДИАГНОСТИКА БЕСЕДЫ ===")
-
-# 1) Пытаемся получить информацию о беседе chat_id=109
-try:
-    chat_info = vk.messages.getChat(chat_id=109)
-    logging.info(f"✅ getChat(109): {json.dumps(chat_info, ensure_ascii=False)}")
-except Exception as e:
-    logging.error(f"❌ getChat(109): {repr(e)}")
-
-# 2) Пытаемся получить участников беседы
-try:
-    members = vk.messages.getConversationMembers(peer_id=2000000109)
-    logging.info(f"✅ Участники беседы: {json.dumps(members, ensure_ascii=False)[:500]}")
-except Exception as e:
-    logging.error(f"❌ getConversationMembers: {repr(e)}")
-
-# 3) Пытаемся отправить тестовое сообщение с peer_id
-try:
-    vk.messages.send(
-        peer_id=2000000109,
-        message="🧪 Тест №1 (peer_id)",
-        random_id=get_random_id()
-    )
-    logging.info("✅ Тест №1 (peer_id): отправлено")
-except Exception as e:
-    logging.error(f"❌ Тест №1 (peer_id): {repr(e)}")
-
-# 4) Пытаемся отправить тестовое сообщение с chat_id
-try:
-    vk.messages.send(
-        chat_id=109,
-        message="🧪 Тест №2 (chat_id)",
-        random_id=get_random_id()
-    )
-    logging.info("✅ Тест №2 (chat_id): отправлено")
-except Exception as e:
-    logging.error(f"❌ Тест №2 (chat_id): {repr(e)}")
-
-logging.info("=== КОНЕЦ ДИАГНОСТИКИ ===")
 
 # --- Отправка в БЕСЕДУ (для гостей) ---
 def send_to_group(text, reply_to=None):
@@ -160,7 +117,8 @@ def send_scheduled_task():
         current_task_index += 1
     else:
         send_to_group("🎊 Все задания выполнены! Спасибо за игру!")
-        logging.info("Все задания выполнены!")
+        logging.info("Все задания выполнены! Останавливаем рассылку.")
+        schedule.clear('quest')  # ← ОСТАНАВЛИВАЕМ РАССЫЛКУ
 
 # --- Команды (только для личных сообщений) ---
 def cmd_start_quest():
