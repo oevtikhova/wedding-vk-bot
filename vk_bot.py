@@ -9,7 +9,7 @@ import schedule
 import time
 
 # --- НАСТРОЙКИ ---
-VK_TOKEN = os.environ.get("VK_TOKEN", "")
+VK_TOKEN = os.environ.get("VK_TOKEN", "vk1.a.nf6zK6aw_gwAxX7cc5mYvEbP3oqbyhOTXKWaCAieJ0RnV792f_6SIt8ZZ_eAjUHxPDx3BI-n81ZLrreqo3AOQHjB3Dc0ffBmHj-Eru-bBgr-lei-TLd8a9LUUgkiPWRnFlzBjmaoBAyD4YdZ6uHwELD_EAZJTwCcSB3JC76Z2J_5SQRP84XmrJGW1QoFs4vqrxPCy9EbFRLE-W4L0s1lUQ")
 GROUP_ID = int(os.environ.get("GROUP_ID", "241527291"))
 PEER_ID = 2000000002  # peer_id БЕСЕДЫ для гостей
 TASK_INTERVAL = 900  # 15 минут
