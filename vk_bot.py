@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
 import vk_api
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from vk_api.utils import get_random_id
@@ -11,11 +12,11 @@ import time
 # --- НАСТРОЙКИ ---
 VK_TOKEN = os.environ.get("VK_TOKEN", "vk1.a.nf6zK6aw_gwAxX7cc5mYvEbP3oqbyhOTXKWaCAieJ0RnV792f_6SIt8ZZ_eAjUHxPDx3BI-n81ZLrreqo3AOQHjB3Dc0ffBmHj-Eru-bBgr-lei-TLd8a9LUUgkiPWRnFlzBjmaoBAyD4YdZ6uHwELD_EAZJTwCcSB3JC76Z2J_5SQRP84XmrJGW1QoFs4vqrxPCy9EbFRLE-W4L0s1lUQ")
 GROUP_ID = int(os.environ.get("GROUP_ID", "241527291"))
-PEER_ID = 2000000109  # peer_id БЕСЕДЫ для гостей
+PEER_ID = 2000000109  # peer_id БЕСЕДЫ для гостей (возможно, нужно будет заменить)
 TASK_INTERVAL = 900  # 15 минут
 
-# --- Ваш личный ID ВК (кому бот шлёт подтверждения). Узнать: vk.com/idXXXX ---
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "384701652"))  # ← вставьте свой ID, если хотите
+# --- Ваш личный ID ВК (для подтверждений в личку) ---
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "384701652"))
 
 # --- ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ ---
 INTRO = (
@@ -78,9 +79,25 @@ def run_health_server():
     server.serve_forever()
 
 # --- Инициализация VK ---
-vk_session = vk_api.VkApi(token=VK_TOKEN)
+vk_session = vk_api.VkApi(token=VK_TOKEN, api_version='5.199')
 vk = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
+
+# --- ОТЛАДКА: получаем список всех бесед бота ---
+try:
+    logging.info("=== ЗАПРАШИВАЕМ СПИСОК БЕСЕД БОТА ===")
+    conversations = vk.messages.getConversations(count=20)
+    logging.info(f"=== СПИСОК БЕСЕД БОТА ===")
+    for conv in conversations['items']:
+        peer_id = conv['conversation']['peer']['id']
+        try:
+            title = conv['conversation']['chat_settings'].get('title', 'Личная переписка')
+        except Exception:
+            title = 'Личная переписка'
+        logging.info(f"peer_id: {peer_id}, название: {title}")
+    logging.info(f"=== КОНЕЦ СПИСКА БЕСЕД ===")
+except Exception as e:
+    logging.error(f"Не удалось получить список бесед: {e}")
 
 # --- Отправка в БЕСЕДУ (для гостей) ---
 def send_to_group(text, reply_to=None):
@@ -91,8 +108,9 @@ def send_to_group(text, reply_to=None):
             reply_to=reply_to,
             random_id=get_random_id()
         )
+        logging.info(f"✅ Сообщение отправлено в беседу {PEER_ID}")
     except Exception as e:
-        logging.error(f"Ошибка отправки в беседу: {e}")
+        logging.error(f"❌ Ошибка отправки в беседу {PEER_ID}: {repr(e)}")
 
 # --- Отправка в ЛИЧКУ (для админа) ---
 def send_to_admin(text):
@@ -154,6 +172,8 @@ def listen_messages():
             attachments = msg.get('attachments', [])
             has_media = any(att['type'] in ['photo', 'video', 'audio_message'] for att in attachments)
 
+            logging.info(f"Получено сообщение от {user_id} в чат {peer_id}: {text[:50]}")
+
             try:
                 # ЛИЧКА (peer_id == user_id) — команды
                 if peer_id == user_id:
@@ -165,8 +185,10 @@ def listen_messages():
                         cmd_reset()
                     elif text == '/stop':
                         cmd_stop()
+                    elif text == '/test_group':
+                        send_to_group("🧪 Тестовое сообщение. Если вы его видите — всё работает!")
                     elif text == '/start' or text == 'начать':
-                        send_to_admin("Привет! Команды:\n/start_quest — запустить квест\n/next — следующее задание сейчас\n/reset — сбросить счётчик\n/stop — остановить")
+                        send_to_admin("Привет! Команды:\n/start_quest — запустить квест\n/next — следующее задание сейчас\n/reset — сбросить счётчик\n/stop — остановить\n/test_group — проверить отправку в беседу")
                 # БЕСЕДА — реакции на гостей
                 elif peer_id == PEER_ID:
                     if has_media:
