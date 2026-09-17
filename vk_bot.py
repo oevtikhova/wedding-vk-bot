@@ -9,15 +9,17 @@ import schedule
 import time
 
 # --- НАСТРОЙКИ ---
-VK_TOKEN = os.environ.get("VK_TOKEN", "vk1.a.nf6zK6aw_gwAxX7cc5mYvEbP3oqbyhOTXKWaCAieJ0RnV792f_6SIt8ZZ_eAjUHxPDx3BI-n81ZLrreqo3AOQHjB3Dc0ffBmHj-Eru-bBgr-lei-TLd8a9LUUgkiPWRnFlzBjmaoBAyD4YdZ6uHwELD_EAZJTwCcSB3JC76Z2J_5SQRP84XmrJGW1QoFs4vqrxPCy9EbFRLE-W4L0s1lUQ")
-GROUP_ID = int(os.environ.get("GROUP_ID", "241527291"))
-PEER_ID = 2000000109  # peer_id вашей беседы
+VK_TOKEN = os.environ.get("VK_TOKEN", "vk1.a.nf6zK6aw_gwAxX7cc5mYvEbP3oqbyhOTXKWaCAieJ0RnV792f_6SIt8ZZ_eAjUHxPDx3BI-n81ZLrreqo3AOQHjB3Dc0ffBmHj-Eru-bBgr-lei-TLd8a9LUUgkiPWRnFlzBjmaoBAyD4YdZ6uHwELD_EAZJTwCcSB3JC76Z2J_5SQRP84XmrJGW1QoFs4vqrxPCy9EbFRLE-W4L0s1lUQ")GROUP_ID = int(os.environ.get("GROUP_ID", "241527291"))
+PEER_ID = 2000000109  # peer_id БЕСЕДЫ для гостей
 TASK_INTERVAL = 900  # 15 минут
+
+# --- Ваш личный ID ВК (кому бот шлёт подтверждения). Узнать: vk.com/idXXXX ---
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "384701652"))  # ← вставьте свой ID, если хотите
 
 # --- ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ ---
 INTRO = (
     "💍 Дорогие гости! 💍\n\n"
-    "Сегодня у нас необычный день — мы запускаем свадебный квест! 🎉\n\n"
+    "Сегодня у нас необычный вечер — мы запускаем свадебный квест! 🎉\n\n"
     "Как это работает:\n"
     "• Каждые 15 минут сюда прилетает новое задание.\n"
     "• Выполняйте его и присылайте результат в этот чат — фото, видео, текст или голосовое.\n"
@@ -79,50 +81,105 @@ vk_session = vk_api.VkApi(token=VK_TOKEN)
 vk = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 
-# --- Отправка задания ---
+# --- Отправка в БЕСЕДУ (для гостей) ---
+def send_to_group(text, reply_to=None):
+    try:
+        vk.messages.send(
+            peer_id=PEER_ID,
+            message=text,
+            reply_to=reply_to,
+            random_id=get_random_id()
+        )
+    except Exception as e:
+        logging.error(f"Ошибка отправки в беседу: {e}")
+
+# --- Отправка в ЛИЧКУ (для админа) ---
+def send_to_admin(text):
+    if ADMIN_ID == 0:
+        return
+    try:
+        vk.messages.send(
+            user_id=ADMIN_ID,
+            message=text,
+            random_id=get_random_id()
+        )
+    except Exception as e:
+        logging.error(f"Ошибка отправки админу: {e}")
+
+# --- Отправка одного задания ---
 def send_scheduled_task():
     global current_task_index
     if current_task_index < len(TASKS):
         task_text = TASKS[current_task_index]
-        try:
-            vk.messages.send(
-                peer_id=PEER_ID,
-                message=f"🎉 Задание №{current_task_index + 1}\n\n{task_text}\n\n📸 Присылайте результат в этот чат!",
-                random_id=get_random_id()
-            )
-            logging.info(f"Задание №{current_task_index + 1} отправлено.")
-            current_task_index += 1
-        except Exception as e:
-            logging.error(f"Ошибка отправки задания: {e}")
+        send_to_group(f"🎉 Задание №{current_task_index + 1}\n\n{task_text}\n\n📸 Присылайте результат в этот чат!")
+        logging.info(f"Задание №{current_task_index + 1} отправлено.")
+        current_task_index += 1
     else:
+        send_to_group("🎊 Все задания выполнены! Спасибо за игру!")
         logging.info("Все задания выполнены!")
+
+# --- Команды (только для личных сообщений) ---
+def cmd_start_quest():
+    global current_task_index
+    current_task_index = 0
+    schedule.clear('quest')
+    send_to_group(INTRO)
+    threading.Timer(8, send_scheduled_task).start()
+    schedule.every(TASK_INTERVAL).seconds.do(send_scheduled_task).tag('quest')
+    send_to_admin("✅ Квест запущен! Приветствие ушло в беседу. Первое задание — через 8 секунд.")
+
+def cmd_next():
+    send_scheduled_task()
+    send_to_admin("➡️ Следующее задание отправлено в беседу.")
+
+def cmd_reset():
+    global current_task_index
+    current_task_index = 0
+    send_to_admin("🔄 Счётчик сброшен. Следующее задание будет №1.")
+
+def cmd_stop():
+    schedule.clear('quest')
+    send_to_admin("⏹ Квест остановлен.")
 
 # --- Слушатель LongPoll ---
 def listen_messages():
-    logging.info("VK-бот запущен и слушает сообщения...")
+    logging.info("VK-бот запущен. Команды — в личку сообщества, задания — в беседу.")
     for event in longpoll.listen():
-        if event.type == VkBotEventType.MESSAGE_NEW and event.to_me:
+        if event.type == VkBotEventType.MESSAGE_NEW:
             msg = event.object.message
-            text = msg.get('text', '')
+            peer_id = msg['peer_id']
+            user_id = msg['from_id']
+            text = msg.get('text', '').strip()
             attachments = msg.get('attachments', [])
             has_media = any(att['type'] in ['photo', 'video', 'audio_message'] for att in attachments)
+
             try:
-                if has_media:
-                    vk.messages.send(peer_id=event.peer_id, message="🔥 Огонь! Задание в копилке!", reply_to=msg['id'], random_id=get_random_id())
-                elif text and not text.startswith('/'):
-                    vk.messages.send(peer_id=event.peer_id, message="💬 Отличный ответ!", reply_to=msg['id'], random_id=get_random_id())
-                elif text == '/start_quest':
-                    vk.messages.send(peer_id=event.peer_id, message=INTRO, random_id=get_random_id())
-                    schedule.every(TASK_INTERVAL).seconds.do(send_scheduled_task)
+                # ЛИЧКА (peer_id == user_id) — команды
+                if peer_id == user_id:
+                    if text == '/start_quest':
+                        cmd_start_quest()
+                    elif text == '/next':
+                        cmd_next()
+                    elif text == '/reset':
+                        cmd_reset()
+                    elif text == '/stop':
+                        cmd_stop()
+                    elif text == '/start' or text == 'начать':
+                        send_to_admin("Привет! Команды:\n/start_quest — запустить квест\n/next — следующее задание сейчас\n/reset — сбросить счётчик\n/stop — остановить")
+                # БЕСЕДА — реакции на гостей
+                elif peer_id == PEER_ID:
+                    if has_media:
+                        send_to_group("🔥 Огонь! Задание в копилке!", msg['id'])
+                    elif text and not text.startswith('/'):
+                        send_to_group("💬 Отличный ответ!", msg['id'])
             except Exception as e:
-                logging.error(f"Ошибка при ответе на сообщение: {e}")
+                logging.error(f"Ошибка при обработке: {e}")
 
 if __name__ == '__main__':
     threading.Thread(target=run_health_server, daemon=True).start()
-    listener_thread = threading.Thread(target=listen_messages) if False else threading.Thread(target=listen_messages)
+    listener_thread = threading.Thread(target=listen_messages)
     listener_thread.daemon = True
     listener_thread.start()
-    logging.info("VK-бот запущен. Ожидание команды /start_quest...")
     while True:
         schedule.run_pending()
         time.sleep(1)
